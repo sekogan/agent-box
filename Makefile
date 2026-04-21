@@ -1,4 +1,4 @@
-AGENTS := claude
+AGENTS := claude copilot
 
 .PHONY: install $(AGENTS)
 

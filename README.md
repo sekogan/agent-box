@@ -2,6 +2,8 @@
 
 Containerized launchers for terminal-based coding agents. Each agent runs in an isolated [Podman](https://podman.io/) container, mounting your current project as the workspace.
 
+The container image is built automatically on first run and cached for subsequent runs. Each agent's configuration and credentials are mounted from the host so they persist across invocations.
+
 ## Installation
 
 ```sh
@@ -12,43 +14,40 @@ This installs all agents. To install a specific agent:
 
 ```sh
 make -C claude install
+make -C copilot install
 ```
+
+## Features
+
+- **Isolation** — the agent runs in a container with access only to the current directory and its config, nothing else on the host.
+- **Custom base images** — layer any agent on top of a Debian/Ubuntu or RHEL/Fedora/UBI image to provide the exact toolchain your project needs.
+- **Per-project configuration** — commit a `.config/<agent>-box.conf` to pin the base image for a project (`<agent>-box init`).
+- **SELinux-aware** — volume mounts are labelled correctly for SELinux hosts (Fedora, RHEL).
+
+> [!WARNING]
+> All agents run in **no-confirmation mode** (`--dangerously-skip-permissions` for Claude, `--yolo` for Copilot), meaning they execute commands without asking. The container limits the blast radius to the current directory, but it does **not** make this fully safe. Prompt injection attacks can still instruct the agent to exfiltrate the contents of your working directory.
 
 ## Agents
 
 ### [claude-box](claude/)
 
-Run [Claude Code](https://claude.ai/code) in an isolated [Podman](https://podman.io/) container, mounting your current project as the workspace.
-
-The goal is to remove the need to review and approve every command Claude runs, or to maintain a list of pre-approved commands. Running Claude Code inside a container makes this safer — it has access only to the current directory, not the rest of the host filesystem.
-
-The container image is built automatically on first use and cached for subsequent runs. Claude's configuration and session data (`~/.claude`) are mounted from the host so they persist across invocations.
-
-> [!WARNING]
-> Claude Code is launched in **dangerous mode** (`--dangerously-skip-permissions`), meaning it will execute commands without asking for confirmation. The container limits the blast radius, but it does **not** make this fully safe. Prompt injection attacks can still instruct Claude to steal the contents of your working directory.
-
-#### Features
-
-- **Isolation** — Claude Code runs in a container with access only to the current directory and your Claude config, nothing else on the host.
-- **Custom base images** — layer Claude Code on top of any Debian/Ubuntu or RHEL/Fedora/UBI image to give Claude the exact toolchain your project needs.
-- **Per-project configuration** — commit a `.config/claude-box.conf` to pin the base image for a project (`claude-box init`).
-- **SELinux-aware** — volume mounts are labelled correctly for SELinux hosts (Fedora, RHEL).
-
-#### Usage
+Runs [Claude Code](https://claude.ai/code). Mounts `~/.claude` and `~/.claude.json` from the host for session and config persistence.
 
 ```sh
-# Launch Claude Code in the current directory
-claude-box
+claude-box                                   # launch in the current directory
+claude-box init -b ghcr.io/myorg/dev:latest  # pin a custom base image
+claude-box -C ~/projects/myapp               # launch in a specific directory
+claude-box --rebuild                         # rebuild the container image
+claude-box -- --model claude-opus-4-6        # pass arguments directly to claude
+```
 
-# Pin a custom base image for a project and save it to .config/claude-box.conf
-claude-box init -b ghcr.io/myorg/dev:latest
+### [copilot-box](copilot/)
 
-# Launch in a specific directory without cd-ing there first
-claude-box -C ~/projects/myapp
+Runs [GitHub Copilot CLI](https://github.com/github/copilot.vim). Mounts `~/.copilot` from the host for authentication and config persistence.
 
-# Rebuild the container image (e.g. after updating the base image)
-claude-box --rebuild
-
-# Pass arguments directly to claude
-claude-box -- --model claude-opus-4-6
+```sh
+copilot-box                                   # launch in the current directory
+copilot-box init -b ghcr.io/myorg/dev:latest  # pin a custom base image
+copilot-box -C ~/projects/myapp               # launch in a specific directory
+copilot-box --rebuild                         # rebuild the container image
 ```
