@@ -10,11 +10,11 @@ ARG USER_NAME=user
 # On RHEL images npm is not pre-installed, so we add it explicitly;
 # on Debian we rely on it being present in the base image (e.g. node:lts-slim).
 RUN if command -v dnf > /dev/null 2>&1; then \
-        dnf install -y --nodocs curl git jq make python3 python3-pip npm vim && \
+        dnf install -y --nodocs curl git jq make python3 python3-pip npm sudo vim && \
         dnf clean all; \
     elif command -v apt-get > /dev/null 2>&1; then \
         apt-get update && \
-        apt-get install -y --no-install-recommends curl git jq make python3 python3-pip vim && \
+        apt-get install -y --no-install-recommends curl git jq make python3 python3-pip sudo vim && \
         rm -rf /var/lib/apt/lists/*; \
     else \
         echo "Unsupported base image: neither dnf nor apt-get found" >&2; exit 1; \
@@ -31,7 +31,9 @@ RUN if command -v dnf > /dev/null 2>&1; then \
 RUN groupadd --gid ${USER_GID} ${USER_NAME} 2>/dev/null || \
         groupmod -n ${USER_NAME} "$(getent group ${USER_GID} | cut -d: -f1)" && \
     useradd --uid ${USER_UID} --gid ${USER_GID} -m -s /bin/bash ${USER_NAME} 2>/dev/null || \
-    usermod -l ${USER_NAME} -m -d /home/${USER_NAME} "$(getent passwd ${USER_UID} | cut -d: -f1)"
+    usermod -l ${USER_NAME} -m -d /home/${USER_NAME} "$(getent passwd ${USER_UID} | cut -d: -f1)" && \
+    echo "${USER_NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USER_NAME} && \
+    chmod 440 /etc/sudoers.d/${USER_NAME}
 
 USER ${USER_NAME}
 
