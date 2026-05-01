@@ -142,23 +142,36 @@ if [[ -n "$COMMAND" ]]; then
     usage 1
 fi
 
+COMMON_IMAGE_NAME="agent-box-common:uid-$(id -u)-$(image_slug "$BASE_IMAGE")"
 IMAGE_NAME="copilot-box:uid-$(id -u)-$(image_slug "$BASE_IMAGE")"
 
 # ---------------------------------------------------------------------------
 # Image build
 # ---------------------------------------------------------------------------
-build_image() {
+build_common_image() {
     local -a extra_args=()
-    if [[ "$REBUILD" == "true" ]]; then
-        extra_args+=("--no-cache")
-    fi
+    [[ "$REBUILD" == "true" ]] && extra_args+=("--no-cache")
 
-    echo "copilot-box: building image ${IMAGE_NAME} ..." >&2
+    echo "copilot-box: building common image ${COMMON_IMAGE_NAME} ..." >&2
     podman build \
         "${extra_args[@]}" \
         --build-arg BASE_IMAGE="$BASE_IMAGE" \
         --build-arg USER_UID="$(id -u)" \
         --build-arg USER_GID="$(id -g)" \
+        --build-arg USER_NAME="$USER_NAME" \
+        -f "${SHARE_DIR}/Dockerfile.common" \
+        -t "$COMMON_IMAGE_NAME" \
+        "$SHARE_DIR"
+}
+
+build_image() {
+    local -a extra_args=()
+    [[ "$REBUILD" == "true" ]] && extra_args+=("--no-cache")
+
+    echo "copilot-box: building image ${IMAGE_NAME} ..." >&2
+    podman build \
+        "${extra_args[@]}" \
+        --build-arg COMMON_IMAGE="$COMMON_IMAGE_NAME" \
         --build-arg USER_NAME="$USER_NAME" \
         -f "${SHARE_DIR}/Dockerfile.copilot" \
         -t "$IMAGE_NAME" \
@@ -166,6 +179,10 @@ build_image() {
 }
 
 if [[ "$REBUILD" == "true" ]]; then
+    build_common_image
+    build_image
+elif ! podman image exists "$COMMON_IMAGE_NAME" 2>/dev/null; then
+    build_common_image
     build_image
 elif ! podman image exists "$IMAGE_NAME" 2>/dev/null; then
     build_image
