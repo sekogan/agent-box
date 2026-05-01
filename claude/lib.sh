@@ -1,5 +1,5 @@
 TOOL_NAME="claude"
-IMAGE_PREFIX="claude-box"
+IMAGE_PREFIX="curb-claude"
 
 get_extra_mounts() {
     # Mounting a non-existent file causes podman to create a directory instead.

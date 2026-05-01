@@ -2,7 +2,7 @@
 set -euo pipefail
 
 USER_NAME="$(id -un)"
-SHARE_DIR="${HOME}/.local/share/agent-box"
+SHARE_DIR="${HOME}/.local/share/curb"
 
 # Derive a tag-safe slug from an image reference (e.g. "myrepo/dev:1.0" → "myrepo-dev-1-0")
 image_slug() {
@@ -11,17 +11,17 @@ image_slug() {
 
 usage() {
     cat <<EOF
-Usage: agent-box TOOL [OPTIONS] [-- TOOL_ARGS...]
-       agent-box init
+Usage: curb TOOL [OPTIONS] [-- TOOL_ARGS...]
+       curb init
 
 Run TOOL in an isolated container, mounting the current directory
 (or the directory given by -C) as the workspace.
 
 The container image is built automatically on first run.
-Available tools correspond to subdirectories of ~/.local/share/agent-box/.
+Available tools correspond to subdirectories of ~/.local/share/curb/.
 
 Commands:
-  init    Write .config/agent-box.conf in the current directory with the
+  init    Write .config/curb.conf in the current directory with the
           default configuration. Errors if the file already exists.
 
 Options:
@@ -50,17 +50,17 @@ EOF
 if [[ "${1:-}" == "init" ]]; then
     shift
     if [[ $# -gt 0 ]]; then
-        echo "agent-box: 'init' does not accept arguments" >&2
+        echo "curb: 'init' does not accept arguments" >&2
         usage 1
     fi
-    CONF_FILE=".config/agent-box.conf"
+    CONF_FILE=".config/curb.conf"
     if [[ -f "$CONF_FILE" ]]; then
-        echo "agent-box: '${PWD}/${CONF_FILE}' already exists; delete it to reinitialize" >&2
+        echo "curb: '${PWD}/${CONF_FILE}' already exists; delete it to reinitialize" >&2
         exit 1
     fi
     mkdir -p .config
     cat > "$CONF_FILE" <<'EOF'
-# agent-box configuration
+# curb configuration
 # Sourced before CLI argument parsing; CLI flags take precedence.
 
 # Base image to layer each tool on top of.
@@ -68,7 +68,7 @@ if [[ "${1:-}" == "init" ]]; then
 # Each distinct base image gets its own cached container image.
 BASE_IMAGE="node:lts-slim"
 EOF
-    echo "agent-box: created ${PWD}/${CONF_FILE}" >&2
+    echo "curb: created ${PWD}/${CONF_FILE}" >&2
     exit 0
 fi
 
@@ -76,7 +76,7 @@ fi
 # Tool selection
 # ---------------------------------------------------------------------------
 if [[ $# -eq 0 ]]; then
-    echo "agent-box: no tool specified" >&2
+    echo "curb: no tool specified" >&2
     usage 1
 fi
 
@@ -85,7 +85,7 @@ shift
 
 LIB="${SHARE_DIR}/${TOOL}/lib.sh"
 if [[ ! -f "$LIB" ]]; then
-    echo "agent-box: unknown tool '${TOOL}' (${LIB} not found)" >&2
+    echo "curb: unknown tool '${TOOL}' (${LIB} not found)" >&2
     exit 1
 fi
 
@@ -102,7 +102,7 @@ source "$LIB"
 BASE_IMAGE="node:lts-slim"
 
 # shellcheck source=/dev/null
-[[ -f "${HOME}/.config/agent-box.conf" ]] && source "${HOME}/.config/agent-box.conf"
+[[ -f "${HOME}/.config/curb.conf" ]] && source "${HOME}/.config/curb.conf"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -118,7 +118,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         -C|--directory)
             if [[ -z "${2:-}" ]]; then
-                echo "agent-box: --directory requires an argument" >&2
+                echo "curb: --directory requires an argument" >&2
                 usage 1
             fi
             cd "$2"
@@ -126,7 +126,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --base-image|-b)
             if [[ -z "${2:-}" ]]; then
-                echo "agent-box: --base-image requires an argument" >&2
+                echo "curb: --base-image requires an argument" >&2
                 usage 1
             fi
             CLI_BASE_IMAGE="$2"
@@ -145,22 +145,22 @@ while [[ $# -gt 0 ]]; do
             break
             ;;
         -*)
-            echo "agent-box: unknown option: $1" >&2
+            echo "curb: unknown option: $1" >&2
             usage 1
             ;;
         *)
-            echo "agent-box: unexpected argument: $1" >&2
+            echo "curb: unexpected argument: $1" >&2
             usage 1
             ;;
     esac
 done
 
 # shellcheck source=/dev/null
-[[ -f ".config/agent-box.conf" ]] && source ".config/agent-box.conf"
+[[ -f ".config/curb.conf" ]] && source ".config/curb.conf"
 
 [[ -n "$CLI_BASE_IMAGE" ]] && BASE_IMAGE="$CLI_BASE_IMAGE"
 
-COMMON_IMAGE_NAME="agent-box-common:uid-$(id -u)-$(image_slug "$BASE_IMAGE")"
+COMMON_IMAGE_NAME="curb-common:uid-$(id -u)-$(image_slug "$BASE_IMAGE")"
 IMAGE_NAME="${IMAGE_PREFIX}:uid-$(id -u)-$(image_slug "$BASE_IMAGE")"
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ build_common_image() {
     local -a extra_args=()
     [[ "$REBUILD" == "true" ]] && extra_args+=("--no-cache")
 
-    echo "agent-box: building common image ${COMMON_IMAGE_NAME} ..." >&2
+    echo "curb: building common image ${COMMON_IMAGE_NAME} ..." >&2
     podman build \
         "${extra_args[@]}" \
         --build-arg BASE_IMAGE="$BASE_IMAGE" \
@@ -186,7 +186,7 @@ build_tool_image() {
     local -a extra_args=()
     [[ "$REBUILD" == "true" ]] && extra_args+=("--no-cache")
 
-    echo "agent-box: building ${TOOL} image ${IMAGE_NAME} ..." >&2
+    echo "curb: building ${TOOL} image ${IMAGE_NAME} ..." >&2
     podman build \
         "${extra_args[@]}" \
         --build-arg COMMON_IMAGE="$COMMON_IMAGE_NAME" \

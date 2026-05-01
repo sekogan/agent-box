@@ -1,4 +1,4 @@
-ARG COMMON_IMAGE=agent-box-common:latest
+ARG COMMON_IMAGE=curb-common:latest
 FROM ${COMMON_IMAGE}
 
 ARG USER_NAME=user

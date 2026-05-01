@@ -1,5 +1,5 @@
 TOOL_NAME="copilot"
-IMAGE_PREFIX="copilot-box"
+IMAGE_PREFIX="curb-copilot"
 
 get_extra_mounts() {
     # Mounting a non-existent directory causes podman to create it as root.
