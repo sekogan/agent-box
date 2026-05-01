@@ -11,23 +11,22 @@ image_slug() {
 
 usage() {
     cat <<EOF
-Usage: claude-box [OPTIONS] [COMMAND] [-- CLAUDE_ARGS...]
+Usage: agent-box TOOL [OPTIONS] [-- TOOL_ARGS...]
+       agent-box init
 
-Launch Claude Code in an isolated container, mounting the current directory
+Run TOOL in an isolated container, mounting the current directory
 (or the directory given by -C) as the workspace.
 
 The container image is built automatically on first run.
-~/.claude.json and ~/.claude are mounted so Claude retains its
-configuration and session data across invocations.
+Available tools correspond to subdirectories of ~/.local/share/agent-box/.
 
 Commands:
-  init    Write .config/claude-box.conf in the current directory with the
-          current effective configuration (from ~/.config/claude-box.conf
-          and CLI flags). Errors if the file already exists.
+  init    Write .config/agent-box.conf in the current directory with the
+          default configuration. Errors if the file already exists.
 
 Options:
   -C, --directory DIR        Change to DIR before doing anything
-  -b, --base-image IMAGE     Base image to layer Claude Code on top of
+  -b, --base-image IMAGE     Base image to layer the tool on top of
                              (default: node:lts-slim). Must be
                              Debian/Ubuntu (apt-get) or RHEL/Fedora/UBI (dnf)
                              compatible. Each distinct base image gets its own
@@ -35,11 +34,67 @@ Options:
   --rebuild                  Rebuild the container image from scratch (--no-cache)
   -h, --help                 Show this help message
 
-Any arguments after -- are passed directly to the claude command inside
-the container (e.g. claude-box -- --model claude-opus-4-6).
+Any arguments after -- are passed directly to the tool inside the container.
 EOF
     exit "${1:-0}"
 }
+
+# ---------------------------------------------------------------------------
+# Global flags handled before tool selection
+# ---------------------------------------------------------------------------
+[[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage 0
+
+# ---------------------------------------------------------------------------
+# init command (tool-agnostic)
+# ---------------------------------------------------------------------------
+if [[ "${1:-}" == "init" ]]; then
+    shift
+    if [[ $# -gt 0 ]]; then
+        echo "agent-box: 'init' does not accept arguments" >&2
+        usage 1
+    fi
+    CONF_FILE=".config/agent-box.conf"
+    if [[ -f "$CONF_FILE" ]]; then
+        echo "agent-box: '${PWD}/${CONF_FILE}' already exists; delete it to reinitialize" >&2
+        exit 1
+    fi
+    mkdir -p .config
+    cat > "$CONF_FILE" <<'EOF'
+# agent-box configuration
+# Sourced before CLI argument parsing; CLI flags take precedence.
+
+# Base image to layer each tool on top of.
+# Must be Debian/Ubuntu (apt-get) or RHEL/Fedora/UBI (dnf) compatible.
+# Each distinct base image gets its own cached container image.
+BASE_IMAGE="node:lts-slim"
+EOF
+    echo "agent-box: created ${PWD}/${CONF_FILE}" >&2
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Tool selection
+# ---------------------------------------------------------------------------
+if [[ $# -eq 0 ]]; then
+    echo "agent-box: no tool specified" >&2
+    usage 1
+fi
+
+TOOL="$1"
+shift
+
+LIB="${SHARE_DIR}/${TOOL}/lib.sh"
+if [[ ! -f "$LIB" ]]; then
+    echo "agent-box: unknown tool '${TOOL}' (${LIB} not found)" >&2
+    exit 1
+fi
+
+# Provide no-op defaults so lib.sh only needs to define what it uses.
+get_extra_mounts() { :; }
+get_extra_env() { :; }
+
+# shellcheck source=/dev/null
+source "$LIB"
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -47,7 +102,7 @@ EOF
 BASE_IMAGE="node:lts-slim"
 
 # shellcheck source=/dev/null
-[[ -f "${HOME}/.config/claude-box.conf" ]] && source "${HOME}/.config/claude-box.conf"
+[[ -f "${HOME}/.config/agent-box.conf" ]] && source "${HOME}/.config/agent-box.conf"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -56,15 +111,14 @@ BASE_IMAGE="node:lts-slim"
 # and applied after the local config is sourced.
 # ---------------------------------------------------------------------------
 REBUILD=false
-COMMAND=""
-CLAUDE_ARGS=()
+TOOL_ARGS=()
 CLI_BASE_IMAGE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         -C|--directory)
             if [[ -z "${2:-}" ]]; then
-                echo "claude-box: --directory requires an argument" >&2
+                echo "agent-box: --directory requires an argument" >&2
                 usage 1
             fi
             cd "$2"
@@ -72,7 +126,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --base-image|-b)
             if [[ -z "${2:-}" ]]; then
-                echo "claude-box: --base-image requires an argument" >&2
+                echo "agent-box: --base-image requires an argument" >&2
                 usage 1
             fi
             CLI_BASE_IMAGE="$2"
@@ -87,63 +141,27 @@ while [[ $# -gt 0 ]]; do
             ;;
         --)
             shift
-            CLAUDE_ARGS=("$@")
+            TOOL_ARGS=("$@")
             break
             ;;
         -*)
-            echo "claude-box: unknown option: $1" >&2
+            echo "agent-box: unknown option: $1" >&2
             usage 1
             ;;
         *)
-            if [[ -n "$COMMAND" ]]; then
-                echo "claude-box: unexpected argument: $1" >&2
-                usage 1
-            fi
-            COMMAND="$1"
-            shift
+            echo "agent-box: unexpected argument: $1" >&2
+            usage 1
             ;;
     esac
 done
 
 # shellcheck source=/dev/null
-[[ -f ".config/claude-box.conf" ]] && source ".config/claude-box.conf"
+[[ -f ".config/agent-box.conf" ]] && source ".config/agent-box.conf"
 
 [[ -n "$CLI_BASE_IMAGE" ]] && BASE_IMAGE="$CLI_BASE_IMAGE"
 
-# ---------------------------------------------------------------------------
-# init command
-# ---------------------------------------------------------------------------
-if [[ "$COMMAND" == "init" ]]; then
-    if [[ ${#CLAUDE_ARGS[@]} -gt 0 ]]; then
-        echo "claude-box: 'init' does not accept -- arguments" >&2
-        usage 1
-    fi
-    CONF_FILE=".config/claude-box.conf"
-    if [[ -f "$CONF_FILE" ]]; then
-        echo "claude-box: '${PWD}/${CONF_FILE}' already exists; delete it to reinitialize" >&2
-        exit 1
-    fi
-    mkdir -p .config
-    cat > "$CONF_FILE" <<EOF
-# claude-box configuration
-# Sourced before CLI argument parsing; CLI flags take precedence.
-
-# Base image to layer Claude Code on top of.
-# Must be Debian/Ubuntu (apt-get) or RHEL/Fedora/UBI (dnf) compatible.
-# Each distinct base image gets its own cached container image.
-BASE_IMAGE="${BASE_IMAGE}"
-EOF
-    echo "claude-box: created ${PWD}/${CONF_FILE}" >&2
-    exit 0
-fi
-
-if [[ -n "$COMMAND" ]]; then
-    echo "claude-box: unknown command: $COMMAND" >&2
-    usage 1
-fi
-
 COMMON_IMAGE_NAME="agent-box-common:uid-$(id -u)-$(image_slug "$BASE_IMAGE")"
-IMAGE_NAME="claude-box:uid-$(id -u)-$(image_slug "$BASE_IMAGE")"
+IMAGE_NAME="${IMAGE_PREFIX}:uid-$(id -u)-$(image_slug "$BASE_IMAGE")"
 
 # ---------------------------------------------------------------------------
 # Image build
@@ -152,7 +170,7 @@ build_common_image() {
     local -a extra_args=()
     [[ "$REBUILD" == "true" ]] && extra_args+=("--no-cache")
 
-    echo "claude-box: building common image ${COMMON_IMAGE_NAME} ..." >&2
+    echo "agent-box: building common image ${COMMON_IMAGE_NAME} ..." >&2
     podman build \
         "${extra_args[@]}" \
         --build-arg BASE_IMAGE="$BASE_IMAGE" \
@@ -164,38 +182,40 @@ build_common_image() {
         "$SHARE_DIR"
 }
 
-build_image() {
+build_tool_image() {
     local -a extra_args=()
     [[ "$REBUILD" == "true" ]] && extra_args+=("--no-cache")
 
-    echo "claude-box: building image ${IMAGE_NAME} ..." >&2
+    echo "agent-box: building ${TOOL} image ${IMAGE_NAME} ..." >&2
     podman build \
         "${extra_args[@]}" \
         --build-arg COMMON_IMAGE="$COMMON_IMAGE_NAME" \
         --build-arg USER_NAME="$USER_NAME" \
-        -f "${SHARE_DIR}/Dockerfile.claude" \
+        -f "${SHARE_DIR}/${TOOL}/Dockerfile" \
         -t "$IMAGE_NAME" \
-        "$SHARE_DIR"
+        "${SHARE_DIR}/${TOOL}"
 }
 
 if [[ "$REBUILD" == "true" ]]; then
     build_common_image
-    build_image
+    build_tool_image
 elif ! podman image exists "$COMMON_IMAGE_NAME" 2>/dev/null; then
     build_common_image
-    build_image
+    build_tool_image
 elif ! podman image exists "$IMAGE_NAME" 2>/dev/null; then
-    build_image
+    build_tool_image
 fi
 
 # ---------------------------------------------------------------------------
-# Ensure Claude config paths exist on the host before mounting.
-# Mounting a non-existent file causes podman to create a directory instead.
+# Tool-specific pre-run setup and mounts
+# get_extra_mounts and get_extra_env are defined in lib.sh (or are no-ops).
+# They append flags to EXTRA_MOUNTS and EXTRA_ENV respectively, and may
+# perform pre-run setup (e.g. creating host directories before mounting).
 # ---------------------------------------------------------------------------
-if [[ ! -f "${HOME}/.claude.json" ]]; then
-    echo '{}' > "${HOME}/.claude.json"
-fi
-mkdir -p "${HOME}/.claude"
+EXTRA_MOUNTS=()
+EXTRA_ENV=()
+get_extra_mounts
+get_extra_env
 
 # ---------------------------------------------------------------------------
 # Git config mounts (read-only)
@@ -221,9 +241,8 @@ FORWARDED_ENV=()
 #
 # --userns=keep-id   maps the host UID:GID to the same UID:GID inside the
 #                    container, which is what the Dockerfile user was built
-#                    with. This avoids root inside the container (required
-#                    by --dangerously-skip-permissions) and ensures bind-
-#                    mounted files are readable/writable without chown.
+#                    with. This avoids root inside the container and ensures
+#                    bind-mounted files are readable/writable without chown.
 #
 # :z on each volume  adds the 'container_file_t' SELinux label so the
 #                    container process is allowed to access the files.
@@ -239,9 +258,9 @@ exec podman run \
     --tty \
     --userns=keep-id \
     -v "${PWD}:/workspace:z" \
-    -v "${HOME}/.claude.json:/home/${USER_NAME}/.claude.json:z" \
-    -v "${HOME}/.claude:/home/${USER_NAME}/.claude:z" \
+    "${EXTRA_MOUNTS[@]+"${EXTRA_MOUNTS[@]}"}" \
     "${GIT_CONFIG_MOUNTS[@]+"${GIT_CONFIG_MOUNTS[@]}"}" \
+    "${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"}" \
     "${FORWARDED_ENV[@]+"${FORWARDED_ENV[@]}"}" \
     "$IMAGE_NAME" \
-    "${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}"
+    "${TOOL_ARGS[@]+"${TOOL_ARGS[@]}"}"

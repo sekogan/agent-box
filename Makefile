@@ -1,13 +1,15 @@
+BIN_DIR   := $(HOME)/.local/bin
 SHARE_DIR := $(HOME)/.local/share/agent-box
-AGENTS    := claude copilot
+TOOLS     := claude copilot
 
-.PHONY: install _install_common $(AGENTS)
+.PHONY: install _install_common $(TOOLS)
 
-install: _install_common $(AGENTS)
+install: _install_common $(TOOLS)
 
 _install_common:
-	install -d $(SHARE_DIR)
+	install -d $(BIN_DIR) $(SHARE_DIR)
+	install -m 755 agent-box $(BIN_DIR)/agent-box
 	install -m 644 Dockerfile.common $(SHARE_DIR)/Dockerfile.common
 
-$(AGENTS):
+$(TOOLS):
 	$(MAKE) -C $@ install
