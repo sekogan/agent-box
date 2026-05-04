@@ -21,8 +21,10 @@ The container image is built automatically on first run.
 Available tools correspond to subdirectories of ~/.local/share/curb/.
 
 Commands:
-  init    Write .config/curb.conf in the current directory with the
-          default configuration. Errors if the file already exists.
+  init    Write .config/curb.conf in the current directory.
+          Errors if the file already exists.
+    -b, --base-image IMAGE     Base image to write into the config
+                               (default: node:lts-slim)
 
 Options:
   -C, --directory DIR        Change to DIR before doing anything
@@ -49,24 +51,44 @@ EOF
 # ---------------------------------------------------------------------------
 if [[ "${1:-}" == "init" ]]; then
     shift
-    if [[ $# -gt 0 ]]; then
-        echo "curb: 'init' does not accept arguments" >&2
-        usage 1
-    fi
+    INIT_BASE_IMAGE="node:lts-slim"
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -b|--base-image)
+                if [[ -z "${2:-}" ]]; then
+                    echo "curb: --base-image requires an argument" >&2
+                    usage 1
+                fi
+                INIT_BASE_IMAGE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage 0
+                ;;
+            -*)
+                echo "curb: unknown option for 'init': $1" >&2
+                usage 1
+                ;;
+            *)
+                echo "curb: unexpected argument for 'init': $1" >&2
+                usage 1
+                ;;
+        esac
+    done
     CONF_FILE=".config/curb.conf"
     if [[ -f "$CONF_FILE" ]]; then
         echo "curb: '${PWD}/${CONF_FILE}' already exists; delete it to reinitialize" >&2
         exit 1
     fi
     mkdir -p .config
-    cat > "$CONF_FILE" <<'EOF'
+    cat > "$CONF_FILE" <<EOF
 # curb configuration
 # Sourced before CLI argument parsing; CLI flags take precedence.
 
 # Base image to layer each tool on top of.
 # Must be Debian/Ubuntu (apt-get) or RHEL/Fedora/UBI (dnf) compatible.
 # Each distinct base image gets its own cached container image.
-BASE_IMAGE="node:lts-slim"
+BASE_IMAGE="${INIT_BASE_IMAGE}"
 EOF
     echo "curb: created ${PWD}/${CONF_FILE}" >&2
     exit 0
